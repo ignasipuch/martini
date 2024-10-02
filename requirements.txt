@@ -5,7 +5,6 @@ backcall==0.2.0
 beautifulsoup4==4.12.3
 biopython @ file:///home/conda/feedstock_root/build_artifacts/biopython_1720014885478/work
 bleach==6.1.0
-bsc_calculations==0.0.1
 certifi @ file:///home/conda/feedstock_root/build_artifacts/certifi_1725278078093/work/certifi
 charset-normalizer==3.3.2
 comm @ file:///home/conda/feedstock_root/build_artifacts/comm_1710320294760/work
@@ -57,7 +56,6 @@ pickleshare @ file:///home/conda/feedstock_root/build_artifacts/pickleshare_1602
 pillow @ file:///home/conda/feedstock_root/build_artifacts/pillow_1719903544255/work
 pipreqs==0.5.0
 platformdirs @ file:///home/conda/feedstock_root/build_artifacts/platformdirs_1725821724470/work
-prepare_proteins==0.0.1
 prompt_toolkit @ file:///home/conda/feedstock_root/build_artifacts/prompt-toolkit_1718047967974/work
 psutil @ file:///home/conda/feedstock_root/build_artifacts/psutil_1725737838492/work
 ptyprocess @ file:///home/conda/feedstock_root/build_artifacts/ptyprocess_1609419310487/work/dist/ptyprocess-0.7.0-py2.py3-none-any.whl
