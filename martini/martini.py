@@ -405,9 +405,27 @@ class Martini:
                 os.makedirs(f"{self.path_output_models}/{i}", exist_ok=True)
 
         def _generateRunFile(queue: str, ntasks: int, gpus: int, cpus: int, replicas: int, trajectory_checkpoints: int):
+            """
+            Generate a run file for a job submission system.
+
+            Args:
+                queue (str): The queue to submit the job to. Should be either 'acc_debug' or 'acc_bscls'.
+                ntasks (int): The number of tasks to allocate for the job.
+                gpus (int): The number of GPUs to allocate for the job.
+                cpus (int): The number of CPUs per task to allocate for the job.
+                replicas (int): The number of replicas to generate in the main body of the run file.
+                trajectory_checkpoints (int): The number of trajectory checkpoints to generate for each replica.
+            """
 
             def _deindent_file(input_file: str, output_file: str):
-                """Remove indentation from lines with initial indentation in the specified file."""
+                """
+                Removes indentation from lines in the input file and writes the modified lines to the output file.
+                
+                Parameters:
+                - input_file (str): The path to the input file.
+                - output_file (str): The path to the output file.
+                """
+                
                 with open(input_file, 'r') as infile:
                     lines = infile.readlines()  # Read all lines from the input file
 
