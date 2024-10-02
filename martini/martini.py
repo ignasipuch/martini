@@ -1,13 +1,10 @@
 # General imports
-from genericpath import isfile
 import os
-import string
-import sys
 import shutil
-from numpy import real
 import pkg_resources
 import subprocess
 import math
+import textwrap
 
 class Martini:
     """
@@ -63,7 +60,7 @@ class Martini:
         shutil.copytree(scripts_path, f"{self.project_name}/scripts", dirs_exist_ok=True)
         shutil.copy(self.pdb_file, self.path_input_models)
             
-    def setProteinCGModel(self, strength_conf: float = 700, overwrite : bool = False) -> None:
+    def setProteinCGModel(self, strength_conf: float = 700, overwrite : bool = False, verbose : bool = True) -> None:
         """
         Sets the coarse-grained (CG) model for the protein.
         
@@ -101,20 +98,23 @@ class Martini:
             ]
             
             # Run the command using subprocess
+            if verbose: print(f"Running martinize2 with command: {' '.join(command)}")
             result = subprocess.run(command, capture_output=True, text=True)
             
             # Check if the command was successful
             if result.returncode != 0:
                 print(f"Error running martinize2: {result.stderr}")
-            else:
-                print(f"martinize2 ran successfully: {result.stdout}")
+                print(f"Output martinize2: {result.stdout}")
+
+        else:
+            if verbose: print(f"CG model file '{cg_pdb_path}' already exists. Use 'overwrite=True' to regenerate the CG model.")
 
         # Set the name of the coarse-grained model file
         self.cg_model_name = f'{self.base_pdb}_cg.pdb'
 
         os.chdir(original_dir)
             
-    def setSolventCGModel(self, ion_molarity: float = 0.15, membrane: bool = False, box_dimensions: list = [20, 20, 10], overwrite: bool = False) -> None:
+    def setSolventCGModel(self, ion_molarity: float = 0.15, membrane: bool = False, box_dimensions: list = [20, 20, 10], overwrite: bool = False, verbose : bool = True) -> None:
         """
         Sets the coarse-grained (CG) model for the solvent.
 
@@ -158,19 +158,19 @@ class Martini:
             command += ["-u", "POPC", "-l", "POPC"]  # Add membrane options
 
         # Run the command using subprocess
+        if verbose: print(f"Running insane with command: {' '.join(command)}")
         result = subprocess.run(command, capture_output=True, text=True)
         
         # Check if the command was successful
         if result.returncode != 0:
             print(f"Error running insane: {result.stderr}")
-        else:
-            print(f"insane ran successfully: {result.stdout}")
+            print(f"Output insane {result.stdout}")
 
         # Set the name of the coarse-grained system file
         self.cg_system_name = 'system.gro'
         os.chdir(original_dir)
 
-    def setUpMartiniSimulation(self, queue : str = 'acc_debug', ntasks : int = 1, gpus : int = 1, cpus : int = 20, temperature : float = 298.15, replicas : int = 4, trajectory_checkpoints : int = 10, simulation_time : int = 10000) -> None:
+    def setUpMartiniSimulation(self, queue : str = 'acc_debug', ntasks : int = 1, gpus : int = 1, cpus : int = 20, temperature : float = 298.15, replicas : int = 4, trajectory_checkpoints : int = 10, simulation_time : int = 10000, verbose : bool = True) -> None:
         """
         Sets up the Martini simulation by performing the following steps:
         1. Modifies the topology files by replacing a specific include line with a new block of includes.
@@ -233,9 +233,12 @@ class Martini:
 
             os.rename("system.top", ".system.top.bak")
             os.rename("system.top.tmp", "system.top")
-            os.remove("topol.top")
+            if os.path.exists("topol.top"):
+                os.remove("topol.top")
 
             os.chdir(original_dir)
+
+            if verbose: print(f"Modified the topology file (system.top) in the directory: {self.path_input_models}")
 
         def _generateGmxFiles():
             """
@@ -264,6 +267,7 @@ class Martini:
             make_ndx_input = "1 | 13\n14 | 17\n1 & a BB\nq\n"
 
             # Run 'gmx make_ndx' with input provided through stdin
+            if verbose: print(f"Running gmx make_ndx with command: {' '.join(make_ndx_command)}")
             result_make_ndx = subprocess.run(make_ndx_command, input=make_ndx_input, text=True, capture_output=True)
             
             # Check if 'gmx make_ndx' command was successful
@@ -285,6 +289,7 @@ class Martini:
             genrestr_input = "20\nq\n"
 
             # Run 'gmx genrestr' with input provided through stdin
+            if verbose: print(f"Running gmx genrestr with command: {' '.join(genrestr_command)}")
             result_genrestr = subprocess.run(genrestr_command, input=genrestr_input, text=True, capture_output=True)
             
             # Check if 'gmx genrestr' command was successful
@@ -384,6 +389,7 @@ class Martini:
 
             _modify_simulation_time(simulation_time, trajectory_checkpoints)    # Modify the simulation time
             _modify_simulation_temperature(temperature)                         # Modify the simulation temperature
+            if verbose: print(f"Modified the Gmx script files in the directory: {self.path_scripts}")
 
         def _generateOuptutDirectoryTree(replicas : int):
             """
@@ -398,150 +404,160 @@ class Martini:
             for i in range(replicas):
                 os.makedirs(f"{self.path_output_models}/{i}", exist_ok=True)
 
-        def _generateRunFile(queue : str, ntasks : int, gpus : int , cpus : int, replicas : int, trajectory_checkpoints : int):
+        def _generateRunFile(queue: str, ntasks: int, gpus: int, cpus: int, replicas: int, trajectory_checkpoints: int):
 
-            if queue not in ['acc_debug','acc_bscls']:
+            def _deindent_file(input_file: str, output_file: str):
+                """Remove indentation from lines with initial indentation in the specified file."""
+                with open(input_file, 'r') as infile:
+                    lines = infile.readlines()  # Read all lines from the input file
+
+                # Remove indentation for lines with indentation
+                dedented_lines = [line.lstrip() if line.startswith((' ', '\t')) else line for line in lines]
+
+                with open(output_file, 'w') as outfile:
+                    outfile.writelines(dedented_lines)  # Write the modified lines to the output file
+
+            if verbose: 
+                print(f"Generating the run file...")
+
+            if queue not in ['acc_debug', 'acc_bscls']:
                 raise Exception('InvalidQueue: this value should either be acc_debug or acc_bscls.')
             else:
                 if queue == 'acc_debug':
                     time = '02:00:00'
                 elif queue == 'acc_bscls':
                     time = '48:00:00'
-            
-            header = f"""
-            #!/bin/bash
-            #SBATCH --job-name={self.project_name}
-            #SBATCH --qos={queue}
-            #SBATCH --time={time}
-            #SBATCH --ntasks {ntasks}
-            #SBATCH --gres gpu:{gpus}
-            #SBATCH --account=bsc72
-            #SBATCH --cpus-per-task {cpus}
-            #SBATCH --array=1-{replicas}
-            #SBATCH --output={self.project_name}.out
-            #SBATCH --error={self.project_name}.err
 
-            module load cuda
-            module load nvidia-hpc-sdk/23.11
-            module load gromacs/2023.3
+            # Dedent the header section to remove all initial indentation
+            header = textwrap.dedent(f"""
+                #!/bin/bash
+                #SBATCH --job-name={self.project_name}
+                #SBATCH --qos={queue}
+                #SBATCH --time={time}
+                #SBATCH --ntasks {ntasks}
+                #SBATCH --gres gpu:{gpus}
+                #SBATCH --account=bsc72
+                #SBATCH --cpus-per-task {cpus}
+                #SBATCH --array=1-{replicas}
+                #SBATCH --output={self.project_name}.out
+                #SBATCH --error={self.project_name}.err
 
-            export SRUN_CPUS_PER_TASK=$${{SLURM_CPUS_PER_TASK}}
-            export SLURM_CPU_BIND=none
-            export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-            export GMX_ENABLE_DIRECT_GPU_COMM=1
-            export GMX_GPU_PME_DECOMPOSITION=1
+                module load cuda
+                module load nvidia-hpc-sdk/23.11
+                module load gromacs/2023.3
 
-            GMXBIN="mpirun --bind-to none -report-bindings gmx_mpi\n"
-            """
+                export SRUN_CPUS_PER_TASK=${{SLURM_CPUS_PER_TASK}}
+                export SLURM_CPU_BIND=none
+                export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+                export GMX_ENABLE_DIRECT_GPU_COMM=1
+                export GMX_GPU_PME_DECOMPOSITION=1
 
-            main_body = ''
+                GMXBIN="mpirun --bind-to none -report-bindings gmx_mpi"
+            """)
 
-            for i in range(1, replicas):
+            main_body = """"""
 
-                trajectory_checks = """
-                $${{GMXBIN}} grompp -f md.mdp -c ../npt/npt3.gro -r ../npt/npt3.gro -p ../../../input_models/system.top -o prot_md_1.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm prot_md_1\n
-                """
-                for j in range (1, trajectory_checkpoints):
+            for i in range(1, replicas+1):
 
-                    trajectory_checks += f"""
-                    $${{GMXBIN}} grompp -f md.mdp -c prot_md_{j}.gro -t prot_md_{j}.cpt -p ../../../input_models/system.top -o prot_md_{j+1}.tpr -n ../../../input_models/index.ndx
-                    $${{GMXBIN}} mdrun -v -deffnm prot_md_{j+1}\n
-                    """
+                # Generate trajectory checkpoints and dedent each generated part
+                trajectory_checks = textwrap.dedent(f"""
+                    ${{GMXBIN}} grompp -f md.mdp -c ../npt/npt3.gro -r ../npt/npt3.gro -p ../../../input_models/system.top -o prot_md_1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm prot_md_1
+                """)
 
-                main_body += f"""
+                for j in range(1, trajectory_checkpoints):
+                    trajectory_checks += textwrap.dedent(f"""
+                    ${{GMXBIN}} grompp -f md.mdp -c prot_md_{j}.gro -t prot_md_{j}.cpt -p ../../../input_models/system.top -o prot_md_{j+1}.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm prot_md_{j+1}
+                    """)
 
-                if [[ $SLURM_ARRAY_TASK_ID = {i} ]]; then
+                # Add the rest of the main body, dedenting each section
+                main_body += textwrap.dedent(f"""
+                    if [[ $SLURM_ARRAY_TASK_ID = {i} ]]; then
+                    cd gdap_close/output_models/{i-1}
 
-                cd gdap_close/output_models/{i-1}
+                    #
+                    # EM
+                    #
+                    mkdir -p em
+                    cp ../../scripts/em.mdp em
+                    cd em
+                    ${{GMXBIN}} grompp -f em.mdp -c ../../../input_models/system.gro -p ../../../input_models/system.top -o em.tpr -v -maxwarn 1
+                    ${{GMXBIN}} mdrun -v -deffnm em
+                    cd ..
 
-                #
-                # EM  -------------------------------------------------------------------------------------------------------------------------------------------
-                #
+                    #
+                    # NVT
+                    #
+                    mkdir -p nvt
+                    cp ../../scripts/nvt*.mdp nvt
+                    cd nvt
 
-                mkdir -p em
-                cp ../../scripts/em.mdp em
-                cd em
-                $${{GMXBIN}} grompp -f em.mdp -c ../../../input_models/system.gro -p ../../../input_models/system.top -o em.tpr -v -maxwarn 1
-                $${{GMXBIN}} mdrun -v -deffnm em
-                cd ..
+                    # time step = 0.001 ps
+                    ${{GMXBIN}} grompp -f nvt1.mdp -c ../em/em.gro -r ../em/em.gro -p ../../../input_models/system.top -o nvt1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm nvt1
 
-                #
-                # NVT -------------------------------------------------------------------------------------------------------------------------------------------
-                #
+                    # time step = 0.002 ps
+                    ${{GMXBIN}} grompp -f nvt2.mdp -c nvt1.gro -r nvt1.gro -p ../../../input_models/system.top -o nvt2.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm nvt2
 
-                mkdir -p nvt
-                cp ../../scripts/nvt*.mdp nvt
-                cd nvt
+                    # time step = 0.004 ps
+                    ${{GMXBIN}} grompp -f nvt3.mdp -c nvt2.gro -r nvt2.gro -p ../../../input_models/system.top -o nvt3.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm nvt3
 
-                # time step = 0.001 ps
-                $${{GMXBIN}} grompp -f nvt1.mdp -c ../em/em.gro -r ../em/em.gro -p ../../../input_models/system.top -o nvt1.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm nvt1
+                    # time step = 0.01 ps
+                    ${{GMXBIN}} grompp -f nvt4.mdp -c nvt3.gro -r nvt3.gro -p ../../../input_models/system.top -o nvt4.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm nvt4
+                    cd ..
 
-                # time step = 0.002 ps
-                $${{GMXBIN}} grompp -f nvt2.mdp -c nvt1.gro -r nvt1.gro -p ../../../input_models/system.top -o nvt2.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm nvt2
+                    #
+                    # NPT
+                    #
+                    mkdir -p npt
+                    cp ../../scripts/npt.mdp npt
+                    cd npt
 
-                # time step = 0.004 ps
-                $${{GMXBIN}} grompp -f nvt3.mdp -c nvt2.gro -r nvt2.gro -p ../../../input_models/system.top -o nvt3.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm nvt3
+                    # restraint 1000
+                    ${{GMXBIN}} grompp -f npt.mdp -c ../nvt/nvt4.gro -r ../nvt/nvt4.gro -p ../../../input_models/system.top -o npt1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm npt1
 
-                # time step = 0.01 ps
-                $${{GMXBIN}} grompp -f nvt4.mdp -c nvt3.gro -r nvt3.gro -p ../../../input_models/system.top -o nvt4.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm nvt4
-                cd ..
+                    # restraint 500
+                    cd ../../../input_models
+                    printf "20\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 500 500 500
+                    cd ../output_models/{i}/npt
 
-                #
-                # NPT -------------------------------------------------------------------------------------------------------------------------------------------
-                #
+                    ${{GMXBIN}} grompp -f npt.mdp -c npt1.gro -r npt1.gro -p ../../../input_models/system.top -o npt2.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm npt2
 
-                mkdir -p npt
-                cp ../../scripts/npt.mdp npt
-                cd npt
+                    # restraint 0
+                    cd ../../../input_models
+                    printf "20\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 0 0 0
+                    cd ../output_models/{i}/npt
 
-                # restraint 1000
+                    ${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} mdrun -v -deffnm npt3
+                    cd ..
 
-                $${{GMXBIN}} grompp -f npt.mdp -c ../nvt/nvt4.gro -r ../nvt/nvt4.gro -p ../../../input_models/system.top -o npt1.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm npt1
+                    #
+                    # MD
+                    #
+                    mkdir -p md
+                    cp ../../scripts/md.mdp md
+                    cd md
+                    {trajectory_checks}
+                    cd ..
+                    fi
+                """)
 
-                # restraint 500
-
-                cd ../../../input_models
-                printf "20\nq\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 500 500 500
-                cd ../output_models/{i}/npt
-
-                $${{GMXBIN}} grompp -f npt.mdp -c npt1.gro -r npt1.gro -p ../../../input_models/system.top -o npt2.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm npt2
-
-                # restraint 0
-
-                cd ../../../input_models
-                printf "20\nq\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 0 0 0
-                cd ../output_models/{i}/npt
-
-                $${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx
-                $${{GMXBIN}} mdrun -v -deffnm npt3
-
-                cd ..
-
-                #
-                # MD  -------------------------------------------------------------------------------------------------------------------------------------------
-                #
-
-                mkdir -p md
-                cp ../../scripts/md.mdp md
-                cd md
-
-                {trajectory_checks}
-
-                cd ..
-                fi\n
-                """
-
+            # Combine header and main body, write the output to slurm_array.sh
             file_text = header + main_body
 
             with open("slurm_array.sh", 'w') as file:
-                file.write(file_text) 
+                file.write(file_text)
+
+            # Dedent the file to remove all initial indentation
+            _deindent_file("slurm_array.sh", "slurm_array.sh")
+
 
         _modifyTopologyFiles()                                                          # Modify the topology files
         _generateGmxFiles()                                                             # Generate Gmx files                                         
