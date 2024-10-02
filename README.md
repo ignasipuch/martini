@@ -1,6 +1,6 @@
 # MARTINI MN5
 
-A brief description of what this project does and who it's for.
+A small library prepare Martini simulations for the MN5 cluster.
 
 ## Table of Contents
 
