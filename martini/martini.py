@@ -170,7 +170,7 @@ class Martini:
         self.cg_system_name = 'system.gro'
         os.chdir(original_dir)
 
-    def setUpMartiniSimulation(self, queue : str = 'acc_debug', ntasks : int = 1, gpus : int = 1, cpus : int = 20, temperature : float = 298.15, replicas : int = 4, trajectory_checkpoints : int = 10, simulation_time : int = 10000, verbose : bool = True) -> None:
+    def setUpMartiniSimulation(self, queue : str = 'acc_debug', ntasks : int = 20, gpus : int = 1, cpus : int = 1, temperature : float = 298.15, replicas : int = 4, trajectory_checkpoints : int = 10, simulation_time : int = 10000, verbose : bool = True) -> None:
         """
         Sets up the Martini simulation by performing the following steps:
         1. Modifies the topology files by replacing a specific include line with a new block of includes.
