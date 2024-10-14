@@ -5,6 +5,7 @@ import pkg_resources
 import subprocess
 import math
 import textwrap
+import pymol
 
 class Martini:
     """
@@ -19,6 +20,9 @@ class Martini:
             pdb_file (str): The path to the PDB file.
             project_name (str | None): The name of the project. If None, the project name will be derived from the PDB file name.
         """
+
+        if not os.path.exists(pdb_file):
+            raise FileNotFoundError(f"File not found: {pdb_file}")
     
         self.pdb_file : str = pdb_file
         self.working_dir : str = os.path.dirname(pdb_file)
@@ -60,7 +64,7 @@ class Martini:
         shutil.copytree(scripts_path, f"{self.project_name}/scripts", dirs_exist_ok=True)
         shutil.copy(self.pdb_file, self.path_input_models)
             
-    def setProteinCGModel(self, strength_conf: float = 700, overwrite : bool = False, verbose : bool = True) -> None:
+    def setProteinCGModel(self, strength_conf: float = 700, overwrite : bool = False, maxwarn : int = 20, verbose : bool = True) -> None:
         """
         Sets the coarse-grained (CG) model for the protein.
         
@@ -68,6 +72,12 @@ class Martini:
             strength_conf (float, optional): The strength of the elastic network used for the CG model. Defaults to 700.
             overwrite (bool, optional): Whether to overwrite the existing CG model file if it already exists. Defaults to False.
         """
+
+        def _orient_protein():
+
+
+            
+
 
         # Create folder tree if it does not exist
         if not os.path.exists(self.project_name):
@@ -94,7 +104,8 @@ class Martini:
                 "-elastic",
                 "-ef", str(strength_conf),
                 "-el", "0.5",
-                "-eu", "0.9"
+                "-eu", "0.9",
+                "-maxwarn", str(maxwarn)
             ]
             
             # Run the command using subprocess
@@ -143,14 +154,15 @@ class Martini:
         # Prepare common command parts
         command = [
             "insane",
-            "-f", self.cg_model_name,  # Input file name for insane (assuming self.cg_model_name exists)
-            "-o", "system.gro",        # Output file name
-            "-p", "system.top",        # Topology file
-            "-pbc", "square",          # Periodic boundary conditions
-            "-box", f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",  # Box dimensions
-            "-center",                 # Center the system
-            "-sol", "W",               # Solvent as water (W)
-            "-salt", str(ion_molarity)  # Salt concentration
+            "-f", self.cg_model_name,                                                   # Input file name for insane (assuming self.cg_model_name exists)
+            "-o", "system.gro",                                                         # Output file name
+            "-p", "system.top",                                                         # Topology file
+            "-pbc", "square",                                                           # Periodic boundary conditions
+            "-box", f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",     # Box dimensions
+            "-center",                                                                  # Center the system
+            "-sol", "W",                                                                # Solvent as water (W)
+            "-salt", str(ion_molarity),                                                 # Salt concentration
+            "-center",                                                                  # Center in the z-axis
         ]
 
         # Modify command if membrane is present
