@@ -8,6 +8,8 @@ import textwrap
 import pymol
 from pymol import cmd
 from Bio.PDB import PDBParser
+import math
+import numpy as np
 
 
 class Martini:
@@ -120,35 +122,62 @@ class Martini:
 
             return [first_residue, last_residue]
 
-        def _orient_residues(structure_file, residues_list):
+        def _orient_residues(residues_list: list[tuple[str, int]]):
             """
             Load a molecular structure, select the alpha carbons (CA) of specific residues,
             orient the structure around those residues, and save the result to a file.
 
             Parameters:
-            structure_file (str): Path to the structure file (PDB or other format supported by PyMOL).
             residues_list (list): List of tuples containing chain and residue number, e.g., [('A', 32), ('B', 4)].
             """
 
             # Initialize PyMOL
-            # '-qc' launches PyMOL quietly without GUI
             pymol.finish_launching(["pymol", "-qc"])
-
-            # Load the structure
-            cmd.load(structure_file)
+            cmd.load(self.pdb_file)
 
             # Create the selection string for alpha carbons of the specified residues
-            selection = "none"
-            for chain, resi in residues_list:
-                selection += f" or (chain {chain} and resi {resi} and name CA)"
+            selection = " or ".join(
+                [
+                    f"chain {chain} and resi {resi} and name CA"
+                    for chain, resi in residues_list
+                ]
+            )
+            cmd.select("z_selection", selection)
 
-            # Select the alpha carbons
-            cmd.select("z_axis", selection)
+            # Get the coordinates of the selected alpha carbons
+            model = cmd.get_model("z_selection")
 
-            # Orient the view to the selection
-            cmd.orient("z_axis")
+            if len(model.atom) != 2:
+                pymol.cmd.quit()
+                raise Exception("RotationError: You must select exactly two residues.")
 
-            # Save the new oriented structure
+            # Get the coordinates of the two selected alpha carbons
+            coord1 = model.atom[0].coord
+            coord2 = model.atom[1].coord
+
+            # Calculate the vector between the two alpha carbons
+            vector = [coord2[i] - coord1[i] for i in range(3)]
+
+            # Normalize the vector
+            length = (sum([v**2 for v in vector])) ** 0.5
+            unit_vector = [v / length for v in vector]
+
+            # Find the angle between the vector and the z-axis (dot product with [0, 0, 1])
+            dot_product = unit_vector[
+                2
+            ]  # Dot product with z-axis unit vector [0, 0, 1]
+            angle = math.acos(dot_product) * 180 / math.pi  # Angle in degrees
+
+            # Compute the axis of rotation (cross product of the vector and z-axis)
+            axis = np.cross(unit_vector, [0, 0, 1]).tolist()
+
+            # Move the selection to the origin
+            cmd.center("z_selection", origin=1)
+
+            # Apply the rotation to align the vector with the z-axis
+            cmd.rotate(axis, angle, "all")
+
+            # Save the newly oriented structure
             cmd.save(self.pdb_oriented)
 
             # Clean up and exit PyMOL
@@ -179,7 +208,7 @@ class Martini:
                         f"Residues used to orient in the z-axis: {residue_orientation}."
                     )
 
-            _orient_residues(self.pdb_file, residue_orientation)
+            _orient_residues(residue_orientation)
 
             # Prepare the command as a list of arguments
             command = [
