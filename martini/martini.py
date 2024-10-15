@@ -6,13 +6,16 @@ import subprocess
 import math
 import textwrap
 import pymol
+from pymol import cmd
+from Bio.PDB import PDBParser
+
 
 class Martini:
     """
     A class to create a Martini project for a protein.
     """
 
-    def __init__(self, pdb_file, project_name : str | None) -> None:
+    def __init__(self, pdb_file, project_name: str | None) -> None:
         """
         Initializes a Martini object.
 
@@ -23,21 +26,22 @@ class Martini:
 
         if not os.path.exists(pdb_file):
             raise FileNotFoundError(f"File not found: {pdb_file}")
-    
-        self.pdb_file : str = pdb_file
-        self.working_dir : str = os.path.dirname(pdb_file)
-        self.base_pdb : str = os.path.basename(pdb_file).split('.')[0]
+
+        self.pdb_file: str = pdb_file
+        self.working_dir: str = os.path.dirname(pdb_file)
+        self.base_pdb: str = os.path.basename(pdb_file).split(".")[0]
+        self.pdb_oriented: str = f"{self.base_pdb}_oriented.pdb"
 
         if project_name is None:
-            self.project_name : str = self.base_pdb
+            self.project_name: str = self.base_pdb
         else:
-            self.project_name : str = project_name
-        
-        self.path_ff : str = f"{self.project_name}/FF"
-        self.path_input_models : str = f"{self.project_name}/input_models"
-        self.path_output_models : str = f"{self.project_name}/output_models"
-        self.path_scripts : str = f"{self.project_name}/scripts"
-        self.cg_model_name : str = ''
+            self.project_name: str = project_name
+
+        self.path_ff: str = f"{self.project_name}/FF"
+        self.path_input_models: str = f"{self.project_name}/input_models"
+        self.path_output_models: str = f"{self.project_name}/output_models"
+        self.path_scripts: str = f"{self.project_name}/scripts"
+        self.cg_model_name: str = ""
 
     def _createFolderTree(self) -> None:
         """
@@ -53,31 +57,103 @@ class Martini:
         """
 
         # Get the paths to the 'ff' and 'scripts' directories from the installed package
-        ff_path = pkg_resources.resource_filename(__name__, 'ff')
-        scripts_path = pkg_resources.resource_filename(__name__, 'scripts')
+        ff_path = pkg_resources.resource_filename(__name__, "ff")
+        scripts_path = pkg_resources.resource_filename(__name__, "scripts")
 
         os.makedirs(self.project_name, exist_ok=True)
         os.makedirs(self.path_ff, exist_ok=True)
         os.makedirs(self.path_input_models, exist_ok=True)
 
         shutil.copytree(ff_path, f"{self.path_ff}/martini", dirs_exist_ok=True)
-        shutil.copytree(scripts_path, f"{self.project_name}/scripts", dirs_exist_ok=True)
+        shutil.copytree(
+            scripts_path, f"{self.project_name}/scripts", dirs_exist_ok=True
+        )
         shutil.copy(self.pdb_file, self.path_input_models)
-            
-    def setProteinCGModel(self, strength_conf: float = 700, overwrite : bool = False, maxwarn : int = 20, verbose : bool = True) -> None:
+
+    def setProteinCGModel(
+        self,
+        residue_orientation: list[tuple[str, int]] | None = None,
+        strength_conf: float = 700,
+        overwrite: bool = False,
+        maxwarn: int = 20,
+        verbose: bool = True,
+    ) -> None:
         """
         Sets the coarse-grained (CG) model for the protein.
-        
+
         Parameters:
             strength_conf (float, optional): The strength of the elastic network used for the CG model. Defaults to 700.
             overwrite (bool, optional): Whether to overwrite the existing CG model file if it already exists. Defaults to False.
         """
 
-        def _orient_protein():
+        def _find_first_and_last_residue() -> list[tuple[str, int]]:
+            """
+            Reads the PDB file and extracts the first and last residue from the first chain using Biopython.
 
+            Returns:
+                list[tuple[str, int]]: A list containing a tuple of the first and last residue with chain and residue number.
+            """
+            # Parse the PDB file
+            parser = PDBParser(QUIET=True)
+            structure = parser.get_structure("structure", self.pdb_file)
 
-            
+            # Get the first model (some PDB files have multiple models)
+            model = structure[0]
 
+            # Initialize variables to hold the first and last residues
+            first_residue = None
+            last_residue = None
+
+            # Iterate through chains and residues to get the first chain and its residues
+            for chain in model:
+                # Get all residues from the first chain
+                residues = list(chain.get_residues())
+
+                # Check if the chain has any residues
+                if len(residues) > 0:
+                    # Get the first and last residue numbers
+                    first_residue = (str(chain.id), int(residues[0].id[1]))
+                    last_residue = (str(chain.id), int(residues[-1].id[1]))
+
+                # Break after processing the first chain
+                break
+
+            return [first_residue, last_residue]
+
+        def _orient_residues(structure_file, residues_list):
+            """
+            Load a molecular structure, select the alpha carbons (CA) of specific residues,
+            orient the structure around those residues, and save the result to a file.
+
+            Parameters:
+            structure_file (str): Path to the structure file (PDB or other format supported by PyMOL).
+            residues_list (list): List of tuples containing chain and residue number, e.g., [('A', 32), ('B', 4)].
+            """
+
+            # Initialize PyMOL
+            # '-qc' launches PyMOL quietly without GUI
+            pymol.finish_launching(["pymol", "-qc"])
+
+            # Load the structure
+            cmd.load(structure_file)
+
+            # Create the selection string for alpha carbons of the specified residues
+            selection = "none"
+            for chain, resi in residues_list:
+                selection += f" or (chain {chain} and resi {resi} and name CA)"
+
+            # Select the alpha carbons
+            cmd.select("z_axis", selection)
+
+            # Orient the view to the selection
+            cmd.orient("z_axis")
+
+            # Save the new oriented structure
+            cmd.save(self.pdb_oriented)
+
+            # Clean up and exit PyMOL
+            cmd.delete("all")
+            pymol.cmd.quit()
 
         # Create folder tree if it does not exist
         if not os.path.exists(self.project_name):
@@ -90,42 +166,77 @@ class Martini:
         if not os.path.exists(cg_pdb_path) or overwrite:
             # Change directory to path_input_models
             os.chdir(self.path_input_models)
-            
+
+            if residue_orientation is None:
+                residue_orientation = _find_first_and_last_residue()
+                if verbose:
+                    print(
+                        f"Residue orientation not provided. Using the first and last residues: {residue_orientation} to orient in the z-axis. Please consider passing a list with the residues to be oriented."
+                    )
+            else:
+                if verbose:
+                    print(
+                        f"Residues used to orient in the z-axis: {residue_orientation}."
+                    )
+
+            _orient_residues(self.pdb_file, residue_orientation)
+
             # Prepare the command as a list of arguments
             command = [
                 "martinize2",
-                "-f", f"{self.base_pdb}.pdb",
-                "-x", f"{self.base_pdb}_cg.pdb",
-                "-o", "topol.top",
-                "-ff", "martini3001",
+                "-f",
+                f"{self.pdb_oriented}",
+                "-x",
+                f"{self.base_pdb}_cg.pdb",
+                "-o",
+                "topol.top",
+                "-ff",
+                "martini3001",
                 "-scfix",
-                "-cys", "auto",
-                "-p", "backbone",
+                "-cys",
+                "auto",
+                "-p",
+                "backbone",
                 "-elastic",
-                "-ef", str(strength_conf),
-                "-el", "0.5",
-                "-eu", "0.9",
-                "-maxwarn", str(maxwarn)
+                "-ef",
+                str(strength_conf),
+                "-el",
+                "0.5",
+                "-eu",
+                "0.9",
+                "-maxwarn",
+                str(maxwarn),
             ]
-            
+
             # Run the command using subprocess
-            if verbose: print(f"Running martinize2 with command: {' '.join(command)}")
+            if verbose:
+                print(f"Running martinize2 with command: {' '.join(command)}")
             result = subprocess.run(command, capture_output=True, text=True)
-            
+
             # Check if the command was successful
             if result.returncode != 0:
                 print(f"Error running martinize2: {result.stderr}")
                 print(f"Output martinize2: {result.stdout}")
 
         else:
-            if verbose: print(f"CG model file '{cg_pdb_path}' already exists. Use 'overwrite=True' to regenerate the CG model.")
+            if verbose:
+                print(
+                    f"CG model file '{cg_pdb_path}' already exists. Use 'overwrite=True' to regenerate the CG model."
+                )
 
         # Set the name of the coarse-grained model file
-        self.cg_model_name = f'{self.base_pdb}_cg.pdb'
+        self.cg_model_name = f"{self.base_pdb}_cg.pdb"
 
         os.chdir(original_dir)
-            
-    def setSolventCGModel(self, ion_molarity: float = 0.15, membrane: bool = False, box_dimensions: list = [20, 20, 10], overwrite: bool = False, verbose : bool = True) -> None:
+
+    def setSolventCGModel(
+        self,
+        ion_molarity: float = 0.15,
+        membrane: bool = False,
+        box_dimensions: list = [20, 20, 10],
+        overwrite: bool = False,
+        verbose: bool = True,
+    ) -> None:
         """
         Sets the coarse-grained (CG) model for the solvent.
 
@@ -135,14 +246,16 @@ class Martini:
             box_dimensions (list, optional): The box dimensions for the CG model. Defaults to [20, 20, 10].
             overwrite (bool, optional): Whether to overwrite the existing CG model file if it already exists. Defaults to False.
         """
-        
+
         # Define the path
-        cg_model_path = os.path.join(self.path_input_models, 'system.gro')
+        cg_model_path = os.path.join(self.path_input_models, "system.gro")
         original_dir = os.getcwd()
-        
+
         # Check if the file exists and if overwrite is False
         if os.path.isfile(cg_model_path) and not overwrite:
-            print(f"CG model file '{cg_model_path}' already exists. Use 'overwrite=True' to regenerate the CG model.")
+            print(
+                f"CG model file '{cg_model_path}' already exists. Use 'overwrite=True' to regenerate the CG model."
+            )
             return
 
         # Proceed to generate a new CG model file if overwrite is True or the file does not exist.
@@ -154,15 +267,31 @@ class Martini:
         # Prepare common command parts
         command = [
             "insane",
-            "-f", self.cg_model_name,                                                   # Input file name for insane (assuming self.cg_model_name exists)
-            "-o", "system.gro",                                                         # Output file name
-            "-p", "system.top",                                                         # Topology file
-            "-pbc", "square",                                                           # Periodic boundary conditions
-            "-box", f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",     # Box dimensions
-            "-center",                                                                  # Center the system
-            "-sol", "W",                                                                # Solvent as water (W)
-            "-salt", str(ion_molarity),                                                 # Salt concentration
-            "-center",                                                                  # Center in the z-axis
+            # Input file name for insane (assuming self.cg_model_name exists)
+            "-f",
+            self.cg_model_name,
+            # Output file name
+            "-o",
+            "system.gro",
+            # Topology file
+            "-p",
+            "system.top",
+            # Periodic boundary conditions
+            "-pbc",
+            "square",
+            # Box dimensions
+            "-box",
+            f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",
+            # Center the system
+            "-center",
+            # Solvent as water (W)
+            "-sol",
+            "W",
+            # Salt concentration
+            "-salt",
+            str(ion_molarity),
+            # Center in the z-axis
+            "-center",
         ]
 
         # Modify command if membrane is present
@@ -170,19 +299,31 @@ class Martini:
             command += ["-u", "POPC", "-l", "POPC"]  # Add membrane options
 
         # Run the command using subprocess
-        if verbose: print(f"Running insane with command: {' '.join(command)}")
+        if verbose:
+            print(f"Running insane with command: {' '.join(command)}")
         result = subprocess.run(command, capture_output=True, text=True)
-        
+
         # Check if the command was successful
         if result.returncode != 0:
             print(f"Error running insane: {result.stderr}")
             print(f"Output insane {result.stdout}")
 
         # Set the name of the coarse-grained system file
-        self.cg_system_name = 'system.gro'
+        self.cg_system_name = "system.gro"
         os.chdir(original_dir)
 
-    def setUpMartiniSimulation(self, queue : str = 'acc_debug', ntasks : int = 20, gpus : int = 1, cpus : int = 1, temperature : float = 298.15, replicas : int = 4, trajectory_checkpoints : int = 10, simulation_time : int = 10000, verbose : bool = True) -> None:
+    def setUpMartiniSimulation(
+        self,
+        queue: str = "acc_debug",
+        ntasks: int = 20,
+        gpus: int = 1,
+        cpus: int = 1,
+        temperature: float = 298.15,
+        replicas: int = 4,
+        trajectory_checkpoints: int = 10,
+        simulation_time: int = 10000,
+        verbose: bool = True,
+    ) -> None:
         """
         Sets up the Martini simulation by performing the following steps:
         1. Modifies the topology files by replacing a specific include line with a new block of includes.
@@ -233,14 +374,14 @@ class Martini:
             file_path = "system.top"
 
             # Read the content of the original file
-            with open(file_path, 'r') as file:
+            with open(file_path, "r") as file:
                 content = file.read()
 
             # Replace the specific include line with the new block
             updated_content = content.replace('#include "martini.itp"', new_block)
 
             # Write the updated content back to the file (or a new file)
-            with open("system.top.tmp", 'w') as updated_file:
+            with open("system.top.tmp", "w") as updated_file:
                 updated_file.write(updated_content)
 
             os.rename("system.top", ".system.top.bak")
@@ -250,7 +391,10 @@ class Martini:
 
             os.chdir(original_dir)
 
-            if verbose: print(f"Modified the topology file (system.top) in the directory: {self.path_input_models}")
+            if verbose:
+                print(
+                    f"Modified the topology file (system.top) in the directory: {self.path_input_models}"
+                )
 
         def _generateGmxFiles():
             """
@@ -263,47 +407,67 @@ class Martini:
             5. Checks if the 'gmx genrestr' command was successful and prints the output or error message accordingly.
             Note: This function assumes that the Gromacs software (gmx) is installed and accessible in the system's PATH.
             """
-            
+
             # Change directory to path_input_models
             original_dir = os.getcwd()
             os.chdir(self.path_input_models)
 
             # Command to run 'gmx make_ndx' with piped input
             make_ndx_command = [
-                'gmx', 'make_ndx',
-                '-f', 'system.gro',
-                '-o', 'index.ndx'
+                "gmx",
+                "make_ndx",
+                "-f",
+                "system.gro",
+                "-o",
+                "index.ndx",
             ]
 
             # Piped input for 'gmx make_ndx'
             make_ndx_input = "1 | 13\n14 | 17\n1 & a BB\nq\n"
 
             # Run 'gmx make_ndx' with input provided through stdin
-            if verbose: print(f"Running gmx make_ndx with command: {' '.join(make_ndx_command)}")
-            result_make_ndx = subprocess.run(make_ndx_command, input=make_ndx_input, text=True, capture_output=True)
-            
+            if verbose:
+                print(
+                    f"Running gmx make_ndx with command: {' '.join(make_ndx_command)}"
+                )
+            result_make_ndx = subprocess.run(
+                make_ndx_command, input=make_ndx_input, text=True, capture_output=True
+            )
+
             # Check if 'gmx make_ndx' command was successful
             if result_make_ndx.returncode != 0:
                 print(f"Error running gmx make_ndx: {result_make_ndx.stderr}")
             else:
                 print(f"gmx make_ndx ran successfully: {result_make_ndx.stdout}")
-            
+
             # Command to run 'gmx genrestr' with piped input
             genrestr_command = [
-                'gmx', 'genrestr',
-                '-f', 'system.gro',
-                '-n', 'index.ndx',
-                '-o', 'posre_backbone.itp',
-                '-fc', '1000', '1000', '1000'
+                "gmx",
+                "genrestr",
+                "-f",
+                "system.gro",
+                "-n",
+                "index.ndx",
+                "-o",
+                "posre_backbone.itp",
+                "-fc",
+                "1000",
+                "1000",
+                "1000",
             ]
 
             # Piped input for 'gmx genrestr'
             genrestr_input = "20\nq\n"
 
             # Run 'gmx genrestr' with input provided through stdin
-            if verbose: print(f"Running gmx genrestr with command: {' '.join(genrestr_command)}")
-            result_genrestr = subprocess.run(genrestr_command, input=genrestr_input, text=True, capture_output=True)
-            
+            if verbose:
+                print(
+                    f"Running gmx genrestr with command: {' '.join(genrestr_command)}"
+                )
+            result_genrestr = subprocess.run(
+                genrestr_command, input=genrestr_input, text=True, capture_output=True
+            )
+
             # Check if 'gmx genrestr' command was successful
             if result_genrestr.returncode != 0:
                 print(f"Error running gmx genrestr: {result_genrestr.stderr}")
@@ -312,7 +476,9 @@ class Martini:
 
             os.chdir(original_dir)
 
-        def _modifyGmxScripts(temperature : float, trajectory_checkpoints : int, simulation_time : int) -> None:
+        def _modifyGmxScripts(
+            temperature: float, trajectory_checkpoints: int, simulation_time: int
+        ) -> None:
             """
             Modifies the Gromacs (Gmx) script files in the specified directory based on the given simulation parameters.
 
@@ -341,25 +507,31 @@ class Martini:
                     number_of_steps = int(value_to_assess)
                 else:
                     number_of_steps = math.trunc(value_to_assess) + 1
-                    print(f'The total simulation time will be: {number_of_steps * (1000*trajectory_checkpoints)}ps')
+                    print(
+                        f"The total simulation time will be: {number_of_steps * (1000*trajectory_checkpoints)}ps"
+                    )
 
                 # Find the md script file in the specified directory
-                md_file = [x for x in os.listdir(self.path_scripts) if x.startswith('md')][0]
+                md_file = [
+                    x for x in os.listdir(self.path_scripts) if x.startswith("md")
+                ][0]
                 path_to_md = os.path.join(self.path_scripts, md_file)
 
                 # Read the content of the file
-                with open(path_to_md, 'r') as file:
+                with open(path_to_md, "r") as file:
                     lines = file.readlines()
 
                 # Modify the 'nsteps' line
                 for i, line in enumerate(lines):
-                    if line.startswith('nsteps'):
+                    if line.startswith("nsteps"):
                         # Replace the nsteps value with the new number_of_steps
-                        lines[i] = f"nsteps                  = {number_of_steps}     ; {simulation_time}ns\n"
+                        lines[i] = (
+                            f"nsteps                  = {number_of_steps}     ; {simulation_time}ns\n"
+                        )
                         break  # Exit the loop once we've made the modification
 
                 # Write the modified content back to the file
-                with open(path_to_md, 'w') as file:
+                with open(path_to_md, "w") as file:
                     file.writelines(lines)
 
             def _modify_simulation_temperature(temperature):
@@ -371,25 +543,31 @@ class Martini:
                 """
 
                 # Find the .mdp files in the specified directory
-                files_to_modify = [os.path.join(self.path_scripts, x) for x in os.listdir(self.path_scripts) if x.endswith('.mdp')]
+                files_to_modify = [
+                    os.path.join(self.path_scripts, x)
+                    for x in os.listdir(self.path_scripts)
+                    if x.endswith(".mdp")
+                ]
 
                 for file in files_to_modify:
                     # Generate a temporary file path for the modified file
-                    new_file_path = file.split('.')[0] + '_tmp.mdp'
+                    new_file_path = file.split(".")[0] + "_tmp.mdp"
 
                     # Read the content of the original file
-                    with open(file, 'r') as original_file:
+                    with open(file, "r") as original_file:
                         lines = original_file.readlines()
 
                     # Modify the 'ref_t' line
                     for i, line in enumerate(lines):
-                        if line.startswith('ref_t'):
+                        if line.startswith("ref_t"):
                             # Replace the ref_t value with the new temperature
-                            lines[i] = f"ref_t                           = {temperature}          {temperature}        ; reference temperature, one for each group, in K\n"
+                            lines[i] = (
+                                f"ref_t                           = {temperature}          {temperature}        ; reference temperature, one for each group, in K\n"
+                            )
                             break  # Exit the loop once we've made the modification
 
                     # Write the modified content to the new temporary file
-                    with open(new_file_path, 'w') as new_file:
+                    with open(new_file_path, "w") as new_file:
                         new_file.writelines(lines)
 
                     # Rename the original file to a backup file (with .bak extension)
@@ -399,11 +577,16 @@ class Martini:
                     # Rename the new temporary file to the original filename
                     os.rename(new_file_path, file)
 
-            _modify_simulation_time(simulation_time, trajectory_checkpoints)    # Modify the simulation time
-            _modify_simulation_temperature(temperature)                         # Modify the simulation temperature
-            if verbose: print(f"Modified the Gmx script files in the directory: {self.path_scripts}")
+            # Modify the simulation time
+            _modify_simulation_time(simulation_time, trajectory_checkpoints)
+            # Modify the simulation temperature
+            _modify_simulation_temperature(temperature)
+            if verbose:
+                print(
+                    f"Modified the Gmx script files in the directory: {self.path_scripts}"
+                )
 
-        def _generateOuptutDirectoryTree(replicas : int):
+        def _generateOuptutDirectoryTree(replicas: int):
             """
             Generates the output directory tree for the Martini project.
             This function creates the following directories:
@@ -416,7 +599,14 @@ class Martini:
             for i in range(replicas):
                 os.makedirs(f"{self.path_output_models}/{i}", exist_ok=True)
 
-        def _generateRunFile(queue: str, ntasks: int, gpus: int, cpus: int, replicas: int, trajectory_checkpoints: int):
+        def _generateRunFile(
+            queue: str,
+            ntasks: int,
+            gpus: int,
+            cpus: int,
+            replicas: int,
+            trajectory_checkpoints: int,
+        ):
             """
             Generate a run file for a job submission system.
 
@@ -432,34 +622,41 @@ class Martini:
             def _deindent_file(input_file: str, output_file: str):
                 """
                 Removes indentation from lines in the input file and writes the modified lines to the output file.
-                
+
                 Parameters:
                 - input_file (str): The path to the input file.
                 - output_file (str): The path to the output file.
                 """
-                
-                with open(input_file, 'r') as infile:
+
+                with open(input_file, "r") as infile:
                     lines = infile.readlines()  # Read all lines from the input file
 
                 # Remove indentation for lines with indentation
-                dedented_lines = [line.lstrip() if line.startswith((' ', '\t')) else line for line in lines]
+                dedented_lines = [
+                    line.lstrip() if line.startswith((" ", "\t")) else line
+                    for line in lines
+                ]
 
-                with open(output_file, 'w') as outfile:
-                    outfile.writelines(dedented_lines)  # Write the modified lines to the output file
+                with open(output_file, "w") as outfile:
+                    # Write the modified lines to the output file
+                    outfile.writelines(dedented_lines)
 
-            if verbose: 
+            if verbose:
                 print(f"Generating the run file...")
 
-            if queue not in ['acc_debug', 'acc_bscls']:
-                raise Exception('InvalidQueue: this value should either be acc_debug or acc_bscls.')
+            if queue not in ["acc_debug", "acc_bscls"]:
+                raise Exception(
+                    "InvalidQueue: this value should either be acc_debug or acc_bscls."
+                )
             else:
-                if queue == 'acc_debug':
-                    time = '02:00:00'
-                elif queue == 'acc_bscls':
-                    time = '48:00:00'
+                if queue == "acc_debug":
+                    time = "02:00:00"
+                elif queue == "acc_bscls":
+                    time = "48:00:00"
 
             # Dedent the header section to remove all initial indentation
-            header = textwrap.dedent(f"""
+            header = textwrap.dedent(
+                f"""
                 #!/bin/bash
                 #SBATCH --job-name={self.project_name}
                 #SBATCH --qos={queue}
@@ -483,26 +680,32 @@ class Martini:
                 export GMX_GPU_PME_DECOMPOSITION=1
 
                 GMXBIN="mpirun --bind-to none -report-bindings gmx_mpi"
-            """)
+            """
+            )
 
             main_body = """"""
 
-            for i in range(1, replicas+1):
+            for i in range(1, replicas + 1):
 
                 # Generate trajectory checkpoints and dedent each generated part
-                trajectory_checks = textwrap.dedent(f"""
+                trajectory_checks = textwrap.dedent(
+                    f"""
                     ${{GMXBIN}} grompp -f md.mdp -c ../npt/npt3.gro -r ../npt/npt3.gro -p ../../../input_models/system.top -o prot_md_1.tpr -n ../../../input_models/index.ndx
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_1
-                """)
+                """
+                )
 
                 for j in range(1, trajectory_checkpoints):
-                    trajectory_checks += textwrap.dedent(f"""
+                    trajectory_checks += textwrap.dedent(
+                        f"""
                     ${{GMXBIN}} grompp -f md.mdp -c prot_md_{j}.gro -t prot_md_{j}.cpt -p ../../../input_models/system.top -o prot_md_{j+1}.tpr -n ../../../input_models/index.ndx
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_{j+1}
-                    """)
+                    """
+                    )
 
                 # Add the rest of the main body, dedenting each section
-                main_body += textwrap.dedent(f"""
+                main_body += textwrap.dedent(
+                    f"""
                     if [[ $SLURM_ARRAY_TASK_ID = {i} ]]; then
                     cd gdap_close/output_models/{i-1}
 
@@ -577,20 +780,27 @@ class Martini:
                     {trajectory_checks}
                     cd ..
                     fi
-                """)
+                """
+                )
 
             # Combine header and main body, write the output to slurm_array.sh
             file_text = header + main_body
 
-            with open("slurm_array.sh", 'w') as file:
+            with open("slurm_array.sh", "w") as file:
                 file.write(file_text)
 
             # Dedent the file to remove all initial indentation
             _deindent_file("slurm_array.sh", "slurm_array.sh")
 
-
-        _modifyTopologyFiles()                                                          # Modify the topology files
-        _generateGmxFiles()                                                             # Generate Gmx files                                         
-        _modifyGmxScripts(temperature, trajectory_checkpoints, simulation_time)         # Modify the Gmx scripts
-        _generateOuptutDirectoryTree(replicas)                                          # Generate the output directory tree
-        _generateRunFile(queue, ntasks, gpus , cpus, replicas, trajectory_checkpoints)  # Generate the run file
+        # Modify the topology files
+        _modifyTopologyFiles()
+        # Generate Gmx files
+        _generateGmxFiles()
+        _modifyGmxScripts(
+            temperature, trajectory_checkpoints, simulation_time
+        )  # Modify the Gmx scripts
+        # Generate the output directory tree
+        _generateOuptutDirectoryTree(replicas)
+        _generateRunFile(
+            queue, ntasks, gpus, cpus, replicas, trajectory_checkpoints
+        )  # Generate the run file
