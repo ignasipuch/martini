@@ -155,6 +155,9 @@ class Martini:
             coord1 = model.atom[0].coord
             coord2 = model.atom[1].coord
 
+            # Calculate the midpoint between the two alpha carbons
+            midpoint = [(coord1[i] + coord2[i]) / 2 for i in range(3)]
+
             # Calculate the vector between the two alpha carbons
             vector = [coord2[i] - coord1[i] for i in range(3)]
 
@@ -171,8 +174,9 @@ class Martini:
             # Compute the axis of rotation (cross product of the vector and z-axis)
             axis = np.cross(unit_vector, [0, 0, 1]).tolist()
 
-            # Move the selection to the origin
-            cmd.center("z_selection", origin=1)
+            # Move the selection to the origin (translate to midpoint)
+            translation_vector = [-midpoint[i] for i in range(3)]
+            cmd.translate(translation_vector, "all")
 
             # Apply the rotation to align the vector with the z-axis
             cmd.rotate(axis, angle, "all")
@@ -263,6 +267,7 @@ class Martini:
         ion_molarity: float = 0.15,
         membrane: bool = False,
         box_dimensions: list = [20, 20, 10],
+        z_membrane_shift: float = 0,
         overwrite: bool = False,
         verbose: bool = True,
     ) -> None:
@@ -296,36 +301,39 @@ class Martini:
         # Prepare common command parts
         command = [
             "insane",
-            # Input file name for insane (assuming self.cg_model_name exists)
             "-f",
             self.cg_model_name,
-            # Output file name
             "-o",
             "system.gro",
-            # Topology file
             "-p",
             "system.top",
-            # Periodic boundary conditions
             "-pbc",
             "square",
-            # Box dimensions
             "-box",
             f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",
-            # Center the system
             "-center",
-            # Solvent as water (W)
             "-sol",
             "W",
-            # Salt concentration
             "-salt",
             str(ion_molarity),
-            # Center in the z-axis
-            "-center",
         ]
 
-        # Modify command if membrane is present
+        # Add membrane options
         if membrane:
-            command += ["-u", "POPC", "-l", "POPC"]  # Add membrane options
+            command += [
+                "-u",
+                "POPC",
+                "-l",
+                "POPC",
+                "-center",
+                "-dm",
+                str(z_membrane_shift),
+            ]
+
+            if verbose:
+                print(
+                    "If the protein is not centered in the z-axis, consider using the z_membrane_shift parameter (with overwrite=True) to shift the membrane."
+                )
 
         # Run the command using subprocess
         if verbose:
