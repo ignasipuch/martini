@@ -747,7 +747,7 @@ class Martini:
                     # ----------------------------------------------------------  {i}  ------------------------------------------------------------
 
                     if [[ $SLURM_ARRAY_TASK_ID = {i} ]]; then
-                    cd gdap_close/output_models/{i-1}
+                    cd {self.project_name}/output_models/{i-1}
 
                     #
                     # EM
