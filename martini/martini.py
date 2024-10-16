@@ -743,6 +743,9 @@ class Martini:
                 # Add the rest of the main body, dedenting each section
                 main_body += textwrap.dedent(
                     f"""
+
+                    -----------------------------------------------------------------------------------------------------------------------------
+
                     if [[ $SLURM_ARRAY_TASK_ID = {i} ]]; then
                     cd gdap_close/output_models/{i-1}
 
