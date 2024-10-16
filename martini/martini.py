@@ -352,9 +352,9 @@ class Martini:
     def setUpMartiniSimulation(
         self,
         queue: str = "acc_debug",
-        ntasks: int = 20,
+        ntasks: int = 1,
         gpus: int = 1,
-        cpus: int = 1,
+        cpus: int = 20,
         temperature: float = 298.15,
         replicas: int = 4,
         trajectory_checkpoints: int = 10,
@@ -376,7 +376,7 @@ class Martini:
         - cpus (int): The number of CPUs per task. Default is 20.
         - replicas (int): The number of replicas to run. Default is 4.
         - trajectory_checkpoints (int): The number of trajectory checkpoints. Default is 10.
-        - simulation_time (int): The total simulation time in picoseconds (ps). Default is 10000 ps.
+        - simulation_time (int): The total simulation time in picoseconds (ns). Default is 10000 ns.
         - temperature (float): The temperature of the simulation in Kelvin (K). Default is 298.15 K.
         """
 
