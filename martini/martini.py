@@ -10,6 +10,7 @@ from pymol import cmd
 from Bio.PDB import PDBParser
 import math
 import numpy as np
+from requests import get
 
 
 class Martini:
@@ -424,12 +425,30 @@ class Martini:
             Note: This function assumes that the current working directory is set to `self.path_input_models`.
             """
 
-            new_block = """#include "../FF/martini/martini_v3.0.0.itp"
+            number_of_molecules = len(
+                [
+                    file
+                    for file in os.listdir(self.path_input_models)
+                    if file.endswith(".itp")
+                ]
+            )
+
+            header = """#include "../FF/martini/martini_v3.0.0.itp"
             #include "../FF/martini/martini_v3.0.0_ions_v1.itp"
             #include "../FF/martini/martini_v3.0.0_phospholipids_v1.itp"
             #include "../FF/martini/martini_v3.0.0_solvents_v1.itp"
-            #include "molecule_0.itp"
-            #ifdef POSRES
+            """
+
+            protein_substitution = ""
+            for i in range(0, number_of_molecules):
+                header += f"""#include "molecule_{i}.itp"
+                """
+                if i == number_of_molecules - 1:
+                    protein_substitution += f"molecule_{i}       1"
+                else:
+                    protein_substitution += f"molecule_{i}       1\n"
+
+            header += """#ifdef POSRES
             #include "posre_backbone.itp"
             #endif
             """
@@ -444,8 +463,12 @@ class Martini:
                 content = file.read()
 
             # Replace the specific include line with the new block
-            updated_content_nb = content.replace('#include "martini.itp"', new_block)
-            updated_content = updated_content_nb.replace("Protein   ", "molecule_0")
+            updated_content_nb = content.replace('#include "martini.itp"', header)
+            updated_content_mol = updated_content_nb.replace(
+                "Protein          1", protein_substitution
+            )
+            updated_content_na = updated_content_mol.replace("NA+", "NA ")
+            updated_content = updated_content_na.replace("CL-", "CL ")
 
             # Write the updated content back to the file (or a new file)
             with open("system.top.tmp", "w") as updated_file:
@@ -525,8 +548,7 @@ class Martini:
                 "1000",
             ]
 
-            # Piped input for 'gmx genrestr'
-            genrestr_input = "20\nq\n"
+            genrestr_input = f"Protein_&_BB\nq\n"
 
             # Run 'gmx genrestr' with input provided through stdin
             if verbose:
