@@ -45,6 +45,27 @@ class Martini:
         self.path_scripts: str = f"{self.project_name}/scripts"
         self.cg_model_name: str = ""
 
+    def _deindent_file(self, input_file: str, output_file: str):
+        """
+        Removes indentation from lines in the input file and writes the modified lines to the output file.
+
+        Parameters:
+        - input_file (str): The path to the input file.
+        - output_file (str): The path to the output file.
+        """
+
+        with open(input_file, "r") as infile:
+            lines = infile.readlines()  # Read all lines from the input file
+
+        # Remove indentation for lines with indentation
+        dedented_lines = [
+            line.lstrip() if line.startswith((" ", "\t")) else line for line in lines
+        ]
+
+        with open(output_file, "w") as outfile:
+            # Write the modified lines to the output file
+            outfile.writelines(dedented_lines)
+
     def _createFolderTree(self) -> None:
         """
         Creates the necessary folder tree for the Martini project.
@@ -394,8 +415,7 @@ class Martini:
             Note: This function assumes that the current working directory is set to `self.path_input_models`.
             """
 
-            new_block = """
-            #include "../FF/martini/martini_v3.0.0.itp"
+            new_block = """#include "../FF/martini/martini_v3.0.0.itp"
             #include "../FF/martini/martini_v3.0.0_ions_v1.itp"
             #include "../FF/martini/martini_v3.0.0_phospholipids_v1.itp"
             #include "../FF/martini/martini_v3.0.0_solvents_v1.itp"
@@ -415,11 +435,14 @@ class Martini:
                 content = file.read()
 
             # Replace the specific include line with the new block
-            updated_content = content.replace('#include "martini.itp"', new_block)
+            updated_content_nb = content.replace('#include "martini.itp"', new_block)
+            updated_content = updated_content_nb.replace("Protein   ", "molecule_0")
 
             # Write the updated content back to the file (or a new file)
             with open("system.top.tmp", "w") as updated_file:
                 updated_file.write(updated_content)
+
+            self._deindent_file("system.top.tmp", "system.top.tmp")
 
             os.rename("system.top", ".system.top.bak")
             os.rename("system.top.tmp", "system.top")
@@ -656,28 +679,6 @@ class Martini:
                 trajectory_checkpoints (int): The number of trajectory checkpoints to generate for each replica.
             """
 
-            def _deindent_file(input_file: str, output_file: str):
-                """
-                Removes indentation from lines in the input file and writes the modified lines to the output file.
-
-                Parameters:
-                - input_file (str): The path to the input file.
-                - output_file (str): The path to the output file.
-                """
-
-                with open(input_file, "r") as infile:
-                    lines = infile.readlines()  # Read all lines from the input file
-
-                # Remove indentation for lines with indentation
-                dedented_lines = [
-                    line.lstrip() if line.startswith((" ", "\t")) else line
-                    for line in lines
-                ]
-
-                with open(output_file, "w") as outfile:
-                    # Write the modified lines to the output file
-                    outfile.writelines(dedented_lines)
-
             if verbose:
                 print(f"Generating the run file...")
 
@@ -829,7 +830,7 @@ class Martini:
                 file.write(file_text)
 
             # Dedent the file to remove all initial indentation
-            _deindent_file("slurm_array.sh", "slurm_array.sh")
+            self._deindent_file("slurm_array.sh", "slurm_array.sh")
 
         # Modify the topology files
         _modifyTopologyFiles()
