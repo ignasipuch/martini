@@ -289,6 +289,7 @@ class Martini:
         membrane: bool = False,
         box_dimensions: list = [20, 20, 10],
         z_membrane_shift: float = 0,
+        charge: int = 0,
         overwrite: bool = False,
         verbose: bool = True,
     ) -> None:
@@ -332,7 +333,6 @@ class Martini:
             "square",
             "-box",
             f"{box_dimensions[0]},{box_dimensions[1]},{box_dimensions[2]}",
-            "-center",
             "-sol",
             "W",
             "-salt",
@@ -351,6 +351,9 @@ class Martini:
                 str(z_membrane_shift),
             ]
 
+        if charge != 0:
+            command += ["-charge", str(charge)]
+
             if verbose:
                 print(
                     "If the protein is not centered in the z-axis, consider using the z_membrane_shift parameter (with overwrite=True) to shift the membrane."
@@ -365,6 +368,12 @@ class Martini:
         if result.returncode != 0:
             print(f"Error running insane: {result.stderr}")
             print(f"Output insane {result.stdout}")
+
+        if verbose:
+            print("\n\n -- WARNING -- \n\n")
+            print(
+                "Insane might not capture correctly the charge of the system.\nIf the GROMACS simulation fails because of this, rerun this\nmethod with the parameter charge adjusted to the .err file\nfrom GROMACS."
+            )
 
         # Set the name of the coarse-grained system file
         self.cg_system_name = "system.gro"
@@ -703,8 +712,8 @@ class Martini:
                 #SBATCH --account=bsc72
                 #SBATCH --cpus-per-task {cpus}
                 #SBATCH --array=1-{replicas}
-                #SBATCH --output={self.project_name}.out
-                #SBATCH --error={self.project_name}.err
+                #SBATCH --output={self.project_name}_%a_%A.out
+                #SBATCH --error={self.project_name}_%a_%A.err
 
                 module load cuda
                 module load nvidia-hpc-sdk/23.11
