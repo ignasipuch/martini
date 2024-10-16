@@ -693,8 +693,7 @@ class Martini:
 
             # Dedent the header section to remove all initial indentation
             header = textwrap.dedent(
-                f"""
-                #!/bin/bash
+                f"""#!/bin/bash
                 #SBATCH --job-name={self.project_name}
                 #SBATCH --qos={queue}
                 #SBATCH --time={time}
