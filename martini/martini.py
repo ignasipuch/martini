@@ -82,6 +82,7 @@ class Martini:
         self.path_scripts: str = f"{self.project_name}/scripts"
         self.cg_model_name: str = ""
         self.residues_per_chain: dict = _get_number_residues_per_chain()
+        self.begin_end_residue_per_chain: dict = {}
 
     def _deindent_file(self, input_file: str, output_file: str):
         """
@@ -559,6 +560,8 @@ class Martini:
                     )
                     last_residue += residue
 
+            self.begin_end_residue_per_chain = begin_end_residues_per_chain
+
             make_ndx_input += "q\n"
 
             # Run 'gmx make_ndx' with input provided through stdin using Popen
@@ -812,7 +815,6 @@ class Martini:
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_1
                 """
                 )
-
                 for j in range(1, trajectory_checkpoints):
                     trajectory_checks += textwrap.dedent(
                         f"""
@@ -820,6 +822,13 @@ class Martini:
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_{j+1}
                     """
                     )
+
+                # Generate restraints for each chain and dedent each generated part
+                restraints = "cd ../../../input_models\n"
+                for _, (begin, end) in self.begin_end_residue_per_chain.items():
+                    restraints += f'printf "Protein_&_BB_&_r_{begin}-{end}\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 500 500 500\n'
+
+                restraints += f"cd ../output_models/{i}/npt"
 
                 # Add the rest of the main body, dedenting each section
                 main_body += textwrap.dedent(
@@ -876,17 +885,13 @@ class Martini:
                     ${{GMXBIN}} mdrun -v -deffnm npt1
 
                     # restraint 500
-                    cd ../../../input_models
-                    printf "20\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 500 500 500
-                    cd ../output_models/{i}/npt
+                    {restraints}
 
                     ${{GMXBIN}} grompp -f npt.mdp -c npt1.gro -r npt1.gro -p ../../../input_models/system.top -o npt2.tpr -n ../../../input_models/index.ndx
                     ${{GMXBIN}} mdrun -v -deffnm npt2
 
                     # restraint 0
-                    cd ../../../input_models
-                    printf "20\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 0 0 0
-                    cd ../output_models/{i}/npt
+                    {restraints.replace("500", "0")}
 
                     ${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx
                     ${{GMXBIN}} mdrun -v -deffnm npt3
