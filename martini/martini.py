@@ -473,7 +473,7 @@ class Martini:
             header = """#include "../FF/martini/martini_v3.0.0.itp"
             #include "../FF/martini/martini_v3.0.0_ions_v1.itp"
             #include "../FF/martini/martini_v3.0.0_phospholipids_v1.itp"
-            #include "../FF/martini/martini_v3.0.0_solvents_v1.itp"
+            #include "../FF/martini/martini_v3.0.0_solvents_v1.itp"\n
             """
 
             protein_substitution = ""
@@ -562,7 +562,6 @@ class Martini:
             make_ndx_input += "q\n"
 
             # Run 'gmx make_ndx' with input provided through stdin using Popen
-            print(f"Running gmx make_ndx with input:\n{make_ndx_input}")
             process_make_ndx = subprocess.Popen(
                 make_ndx_command,
                 stdin=subprocess.PIPE,
