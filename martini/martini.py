@@ -16,6 +16,24 @@ from requests import get
 class Martini:
     """
     A class to create a Martini project for a protein.
+
+    Attributes:
+        pdb_file (str): The path to the PDB file.
+        project_name (str): The name of the project.
+        path_ff (str): The path to the force field files.
+        path_input_models (str): The path to the input models directory.
+        path_output_models (str): The path to the output models directory.
+        path_scripts (str): The path to the scripts directory.
+        cg_model_name (str): The name of the coarse-grained model file.
+        residues_per_chain (dict): The number of residues per chain in the PDB file.
+
+    Returns:
+        A Martini object.
+
+    Methods:
+        setProteinCGModel(residue_orientation, strength_conf, overwrite): Sets the coarse-grained (CG) model for the protein.
+        setSolventCGModel(ion_molarity, membrane, box_dimensions, z_membrane_shift, charge, overwrite): Sets the coarse-grained (CG) model for the solvent.
+        setUpMartiniSimulation(queue, ntasks, gpus, cpus, temperature, replicas, trajectory_checkpoints, simulation_time): Sets up the Martini simulation.
     """
 
     def __init__(self, pdb_file, project_name: str | None) -> None:
@@ -26,6 +44,24 @@ class Martini:
             pdb_file (str): The path to the PDB file.
             project_name (str | None): The name of the project. If None, the project name will be derived from the PDB file name.
         """
+
+        def _get_number_residues_per_chain():
+            """
+            Get the number of residues per chain in the PDB file.
+            """
+
+            # Load the PDB structure
+            parser = PDBParser()
+            structure = parser.get_structure("structure", self.pdb_file)
+
+            residues_per_chain = {}
+
+            # Iterate over all chains and count the residues
+            for model in structure:
+                for i, chain in enumerate(model):
+                    residues_per_chain[int(i)] = len(list(chain.get_residues()))
+
+            return residues_per_chain
 
         if not os.path.exists(pdb_file):
             raise FileNotFoundError(f"File not found: {pdb_file}")
@@ -45,6 +81,7 @@ class Martini:
         self.path_output_models: str = f"{self.project_name}/output_models"
         self.path_scripts: str = f"{self.project_name}/scripts"
         self.cg_model_name: str = ""
+        self.residues_per_chain: dict = _get_number_residues_per_chain()
 
     def _deindent_file(self, input_file: str, output_file: str):
         """
@@ -442,16 +479,14 @@ class Martini:
             protein_substitution = ""
             for i in range(0, number_of_molecules):
                 header += f"""#include "molecule_{i}.itp"
+                #ifdef POSRES
+                #include "posre_backbone_{i}.itp"
+                #endif\n
                 """
                 if i == number_of_molecules - 1:
                     protein_substitution += f"molecule_{i}       1"
                 else:
                     protein_substitution += f"molecule_{i}       1\n"
-
-            header += """#ifdef POSRES
-            #include "posre_backbone.itp"
-            #endif
-            """
 
             # Path to the file you want to modify
             original_dir = os.getcwd()
@@ -489,22 +524,11 @@ class Martini:
                 )
 
         def _generateGmxFiles():
-            """
-            This function generates Gromacs (Gmx) files using the 'gmx make_ndx' and 'gmx genrestr' commands.
-            The function performs the following steps:
-            1. Changes the current directory to the path_input_models.
-            2. Executes the 'gmx make_ndx' command with piped input to generate an index file (index.ndx).
-            3. Checks if the 'gmx make_ndx' command was successful and prints the output or error message accordingly.
-            4. Executes the 'gmx genrestr' command with piped input to generate a position restraint file (posre_backbone.itp).
-            5. Checks if the 'gmx genrestr' command was successful and prints the output or error message accordingly.
-            Note: This function assumes that the Gromacs software (gmx) is installed and accessible in the system's PATH.
-            """
-
             # Change directory to path_input_models
             original_dir = os.getcwd()
             os.chdir(self.path_input_models)
 
-            # Command to run 'gmx make_ndx' with piped input
+            # Command to run 'gmx make_ndx'
             make_ndx_command = [
                 "gmx",
                 "make_ndx",
@@ -515,56 +539,83 @@ class Martini:
             ]
 
             # Piped input for 'gmx make_ndx'
-            make_ndx_input = "1 | 13\n14 | 17\n1 & a BB\nq\n"
+            make_ndx_input = "1 | 13\n14 | 17\n"
+            begin_end_residues_per_chain = {}
 
-            # Run 'gmx make_ndx' with input provided through stdin
-            if verbose:
-                print(
-                    f"Running gmx make_ndx with command: {' '.join(make_ndx_command)}"
-                )
-            result_make_ndx = subprocess.run(
-                make_ndx_command, input=make_ndx_input, text=True, capture_output=True
+            last_residue = 0
+            for i, (_, residue) in enumerate(self.residues_per_chain.items()):
+                if i == 0:
+                    make_ndx_input += f"1 & a BB & ri 1-{residue}\n"
+                    last_residue = residue
+                    begin_end_residues_per_chain[i] = (1, residue)
+
+                elif 0 < i < len(self.residues_per_chain.items()):
+                    make_ndx_input += (
+                        f"1 & a BB & ri {last_residue+1}-{last_residue+residue}\n"
+                    )
+                    begin_end_residues_per_chain[i] = (
+                        last_residue + 1,
+                        last_residue + residue,
+                    )
+                    last_residue += residue
+
+            make_ndx_input += "q\n"
+
+            # Run 'gmx make_ndx' with input provided through stdin using Popen
+            print(f"Running gmx make_ndx with input:\n{make_ndx_input}")
+            process_make_ndx = subprocess.Popen(
+                make_ndx_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
+            stdout, stderr = process_make_ndx.communicate(input=make_ndx_input)
 
             # Check if 'gmx make_ndx' command was successful
-            if result_make_ndx.returncode != 0:
-                print(f"Error running gmx make_ndx: {result_make_ndx.stderr}")
+            if process_make_ndx.returncode != 0:
+                print(f"Error running gmx make_ndx: {stderr}")
             else:
-                print(f"gmx make_ndx ran successfully: {result_make_ndx.stdout}")
+                print(f"gmx make_ndx ran successfully: {stdout}")
 
-            # Command to run 'gmx genrestr' with piped input
-            genrestr_command = [
-                "gmx",
-                "genrestr",
-                "-f",
-                "system.gro",
-                "-n",
-                "index.ndx",
-                "-o",
-                "posre_backbone.itp",
-                "-fc",
-                "1000",
-                "1000",
-                "1000",
-            ]
+            # Now, for genrestr (same process, but for each chain)
+            for key, (value_ini, value_end) in begin_end_residues_per_chain.items():
+                genrestr_command = [
+                    "gmx",
+                    "genrestr",
+                    "-f",
+                    "system.gro",
+                    "-n",
+                    "index.ndx",
+                    "-o",
+                    f"posre_backbone_{key}.itp",
+                    "-fc",
+                    "1000",
+                    "1000",
+                    "1000",
+                ]
 
-            genrestr_input = f"Protein_&_BB\nq\n"
+                genrestr_input = f"Protein_&_BB_&_r_{value_ini}-{value_end}\nq\n"
 
-            # Run 'gmx genrestr' with input provided through stdin
-            if verbose:
-                print(
-                    f"Running gmx genrestr with command: {' '.join(genrestr_command)}"
+                # Run 'gmx genrestr' with input provided through stdin using Popen
+                process_genrestr = subprocess.Popen(
+                    genrestr_command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
                 )
-            result_genrestr = subprocess.run(
-                genrestr_command, input=genrestr_input, text=True, capture_output=True
-            )
+                stdout_genrestr, stderr_genrestr = process_genrestr.communicate(
+                    input=genrestr_input
+                )
 
-            # Check if 'gmx genrestr' command was successful
-            if result_genrestr.returncode != 0:
-                print(f"Error running gmx genrestr: {result_genrestr.stderr}")
-            else:
-                print(f"gmx genrestr ran successfully: {result_genrestr.stdout}")
+                # Check if 'gmx genrestr' command was successful
+                if process_genrestr.returncode != 0:
+                    print(f"Error running gmx genrestr: {stderr_genrestr}")
+                else:
+                    print(f"gmx genrestr ran successfully: {stdout_genrestr}")
 
+            # Return to the original directory
             os.chdir(original_dir)
 
         def _modifyGmxScripts(
