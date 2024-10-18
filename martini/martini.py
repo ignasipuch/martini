@@ -480,9 +480,6 @@ class Martini:
             protein_substitution = ""
             for i in range(0, number_of_molecules):
                 header += f"""#include "molecule_{i}.itp"
-                #ifdef POSRES
-                #include "posre_backbone_{i}.itp"
-                #endif\n
                 """
                 if i == number_of_molecules - 1:
                     protein_substitution += f"molecule_{i}       1"
@@ -525,6 +522,10 @@ class Martini:
                 )
 
         def _generateGmxFiles():
+            """
+            Generates Gromacs (Gmx) files using the 'gmx make_ndx' and 'gmx genrestr' commands.
+            """
+
             # Change directory to path_input_models
             original_dir = os.getcwd()
             os.chdir(self.path_input_models)
@@ -540,29 +541,7 @@ class Martini:
             ]
 
             # Piped input for 'gmx make_ndx'
-            make_ndx_input = "1 | 13\n14 | 17\n"
-            begin_end_residues_per_chain = {}
-
-            last_residue = 0
-            for i, (_, residue) in enumerate(self.residues_per_chain.items()):
-                if i == 0:
-                    make_ndx_input += f"1 & a BB & ri 1-{residue}\n"
-                    last_residue = residue
-                    begin_end_residues_per_chain[i] = (1, residue)
-
-                elif 0 < i < len(self.residues_per_chain.items()):
-                    make_ndx_input += (
-                        f"1 & a BB & ri {last_residue+1}-{last_residue+residue}\n"
-                    )
-                    begin_end_residues_per_chain[i] = (
-                        last_residue + 1,
-                        last_residue + residue,
-                    )
-                    last_residue += residue
-
-            self.begin_end_residue_per_chain = begin_end_residues_per_chain
-
-            make_ndx_input += "q\n"
+            make_ndx_input = "1 | 13\n17 | 14\nq\n"
 
             # Run 'gmx make_ndx' with input provided through stdin using Popen
             process_make_ndx = subprocess.Popen(
@@ -579,43 +558,6 @@ class Martini:
                 print(f"Error running gmx make_ndx: {stderr}")
             else:
                 print(f"gmx make_ndx ran successfully: {stdout}")
-
-            # Now, for genrestr (same process, but for each chain)
-            for key, (value_ini, value_end) in begin_end_residues_per_chain.items():
-                genrestr_command = [
-                    "gmx",
-                    "genrestr",
-                    "-f",
-                    "system.gro",
-                    "-n",
-                    "index.ndx",
-                    "-o",
-                    f"posre_backbone_{key}.itp",
-                    "-fc",
-                    "1000",
-                    "1000",
-                    "1000",
-                ]
-
-                genrestr_input = f"Protein_&_BB_&_r_{value_ini}-{value_end}\nq\n"
-
-                # Run 'gmx genrestr' with input provided through stdin using Popen
-                process_genrestr = subprocess.Popen(
-                    genrestr_command,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-                stdout_genrestr, stderr_genrestr = process_genrestr.communicate(
-                    input=genrestr_input
-                )
-
-                # Check if 'gmx genrestr' command was successful
-                if process_genrestr.returncode != 0:
-                    print(f"Error running gmx genrestr: {stderr_genrestr}")
-                else:
-                    print(f"gmx genrestr ran successfully: {stdout_genrestr}")
 
             # Return to the original directory
             os.chdir(original_dir)
@@ -811,24 +753,30 @@ class Martini:
                 # Generate trajectory checkpoints and dedent each generated part
                 trajectory_checks = textwrap.dedent(
                     f"""
-                    ${{GMXBIN}} grompp -f md.mdp -c ../npt/npt3.gro -r ../npt/npt3.gro -p ../../../input_models/system.top -o prot_md_1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f md.mdp -c ../npt/npt3.gro -r ../npt/npt3.gro -p ../../../input_models/system.top -o prot_md_1.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_1
                 """
                 )
+
+                # NPT variable restraints
+                restraints = "cd ../../../input_models\n"
+                for k in self.residues_per_chain.keys():
+                    restraints += (
+                        f"sed -i '/\\[ position_restraints \\]/,/#endif/ "
+                        f"{{s/\\([0-9]\\+[ \\t]\\+[0-9]\\+[ \\t]\\+\\)1000 1000 1000/\\1500 500 500/g}}' "
+                        f"molecule_{k}.itp\n"
+                    )
+
+                restraints += f"cd ../output_models/{i-1}/npt\n"
+
+                # MD checkpoints
                 for j in range(1, trajectory_checkpoints):
                     trajectory_checks += textwrap.dedent(
                         f"""
-                    ${{GMXBIN}} grompp -f md.mdp -c prot_md_{j}.gro -t prot_md_{j}.cpt -p ../../../input_models/system.top -o prot_md_{j+1}.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f md.mdp -c prot_md_{j}.gro -t prot_md_{j}.cpt -p ../../../input_models/system.top -o prot_md_{j+1}.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm prot_md_{j+1}
                     """
                     )
-
-                # Generate restraints for each chain and dedent each generated part
-                restraints = "cd ../../../input_models\n"
-                for _, (begin, end) in self.begin_end_residue_per_chain.items():
-                    restraints += f'printf "Protein_&_BB_&_r_{begin}-{end}\\nq\\n" | gmx genrestr -f system.gro -n index.ndx -o posre_backbone.itp -fc 500 500 500\n'
-
-                restraints += f"cd ../output_models/{i}/npt"
 
                 # Add the rest of the main body, dedenting each section
                 main_body += textwrap.dedent(
@@ -891,7 +839,7 @@ class Martini:
                     ${{GMXBIN}} mdrun -v -deffnm npt2
 
                     # restraint 0
-                    {restraints.replace("500", "0")}
+                    {restraints.replace("500", "0").replace("1000","500")}
 
                     ${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx
                     ${{GMXBIN}} mdrun -v -deffnm npt3
@@ -918,15 +866,12 @@ class Martini:
             # Dedent the file to remove all initial indentation
             self._deindent_file("slurm_array.sh", "slurm_array.sh")
 
-        # Modify the topology files
-        _modifyTopologyFiles()
-        # Generate Gmx files
-        _generateGmxFiles()
+        _modifyTopologyFiles()  # Modify the topology file
+        _generateGmxFiles()  # Generate Gmx files
         _modifyGmxScripts(
             temperature, trajectory_checkpoints, simulation_time
         )  # Modify the Gmx scripts
-        # Generate the output directory tree
-        _generateOuptutDirectoryTree(replicas)
+        _generateOuptutDirectoryTree(replicas)  # Generate the output directory tree
         _generateRunFile(
             queue, ntasks, gpus, cpus, replicas, trajectory_checkpoints
         )  # Generate the run file
