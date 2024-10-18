@@ -767,7 +767,7 @@ class Martini:
                         f"molecule_{k}.itp\n"
                     )
 
-                restraints += f"cd ../output_models/{i-1}/npt\n"
+                restraints += f"cd ../output_models/{i-1}/npt"
 
                 # MD checkpoints
                 for j in range(1, trajectory_checkpoints):
