@@ -584,9 +584,13 @@ class Martini:
                 5. Write the modified content back to the file.
                 """
 
+                time_step = 0.01
+
                 # Calculate number_of_steps based on the given logic
                 simulation_time_in_pico = simulation_time * 1000
-                value_to_assess = simulation_time_in_pico / trajectory_checkpoints
+                value_to_assess = simulation_time_in_pico / (
+                    trajectory_checkpoints * time_step
+                )
 
                 # Check if the division is exact
                 if simulation_time_in_pico % trajectory_checkpoints == 0:
@@ -805,19 +809,19 @@ class Martini:
                     cd nvt
 
                     # time step = 0.001 ps
-                    ${{GMXBIN}} grompp -f nvt1.mdp -c ../em/em.gro -r ../em/em.gro -p ../../../input_models/system.top -o nvt1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f nvt1.mdp -c ../em/em.gro -r ../em/em.gro -p ../../../input_models/system.top -o nvt1.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm nvt1
 
                     # time step = 0.002 ps
-                    ${{GMXBIN}} grompp -f nvt2.mdp -c nvt1.gro -r nvt1.gro -p ../../../input_models/system.top -o nvt2.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f nvt2.mdp -c nvt1.gro -r nvt1.gro -p ../../../input_models/system.top -o nvt2.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm nvt2
 
                     # time step = 0.004 ps
-                    ${{GMXBIN}} grompp -f nvt3.mdp -c nvt2.gro -r nvt2.gro -p ../../../input_models/system.top -o nvt3.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f nvt3.mdp -c nvt2.gro -r nvt2.gro -p ../../../input_models/system.top -o nvt3.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm nvt3
 
                     # time step = 0.01 ps
-                    ${{GMXBIN}} grompp -f nvt4.mdp -c nvt3.gro -r nvt3.gro -p ../../../input_models/system.top -o nvt4.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f nvt4.mdp -c nvt3.gro -r nvt3.gro -p ../../../input_models/system.top -o nvt4.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm nvt4
                     cd ..
 
@@ -829,19 +833,19 @@ class Martini:
                     cd npt
 
                     # restraint 1000
-                    ${{GMXBIN}} grompp -f npt.mdp -c ../nvt/nvt4.gro -r ../nvt/nvt4.gro -p ../../../input_models/system.top -o npt1.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f npt.mdp -c ../nvt/nvt4.gro -r ../nvt/nvt4.gro -p ../../../input_models/system.top -o npt1.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm npt1
 
                     # restraint 500
                     {restraints}
 
-                    ${{GMXBIN}} grompp -f npt.mdp -c npt1.gro -r npt1.gro -p ../../../input_models/system.top -o npt2.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f npt.mdp -c npt1.gro -r npt1.gro -p ../../../input_models/system.top -o npt2.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm npt2
 
                     # restraint 0
                     {restraints.replace("500", "0").replace("1000","500")}
 
-                    ${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx
+                    ${{GMXBIN}} grompp -f npt.mdp -c npt2.gro -r npt2.gro -p ../../../input_models/system.top -o npt3.tpr -n ../../../input_models/index.ndx -maxwarn 1
                     ${{GMXBIN}} mdrun -v -deffnm npt3
                     cd ..
 
