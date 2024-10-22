@@ -182,7 +182,7 @@ class Martini:
 
             return [first_residue, last_residue]
 
-        def _orient_residues(residues_list: list[tuple[str, int]]):
+        def _orient_residues(residues_list: list[tuple[str, int]]) -> None:
             """
             Load a molecular structure, select the alpha carbons (CA) of specific residues,
             orient the structure around those residues, and save the result to a file.
@@ -221,25 +221,45 @@ class Martini:
             # Calculate the vector between the two alpha carbons
             vector = [coord2[i] - coord1[i] for i in range(3)]
 
-            # Normalize the vector
+            # Check if the distance between the two alpha carbons is too small
             length = (sum([v**2 for v in vector])) ** 0.5
+            if length < 1e-3:
+                pymol.cmd.quit()
+                raise Exception(
+                    "RotationError: The two residues are too close to each other."
+                )
+
+            # Normalize the vector
             unit_vector = [v / length for v in vector]
 
             # Find the angle between the vector and the z-axis (dot product with [0, 0, 1])
             dot_product = unit_vector[
                 2
             ]  # Dot product with z-axis unit vector [0, 0, 1]
+            dot_product = max(
+                min(dot_product, 1.0), -1.0
+            )  # Clamp to avoid domain errors
             angle = math.acos(dot_product) * 180 / math.pi  # Angle in degrees
 
-            # Compute the axis of rotation (cross product of the vector and z-axis)
-            axis = np.cross(unit_vector, [0, 0, 1]).tolist()
+            # Skip rotation if the vector is already aligned with the z-axis
+            if abs(angle) < 1e-3:
+                print("The structure is already aligned with the z-axis.")
+            else:
+                # Compute the axis of rotation (cross product of the vector and z-axis)
+                axis = np.cross(unit_vector, [0, 0, 1]).tolist()
 
-            # Move the selection to the origin (translate to midpoint)
-            translation_vector = [-midpoint[i] for i in range(3)]
-            cmd.translate(translation_vector, "all")
+                # If the cross product is near zero, no rotation is needed
+                if np.linalg.norm(axis) < 1e-6:
+                    print(
+                        "The vector is already aligned or anti-aligned with the z-axis."
+                    )
+                else:
+                    # Move the selection to the origin (translate to midpoint)
+                    translation_vector = [-midpoint[i] for i in range(3)]
+                    cmd.translate(translation_vector, "all")
 
-            # Apply the rotation to align the vector with the z-axis
-            cmd.rotate(axis, angle, "all")
+                    # Apply the rotation to align the vector with the z-axis
+                    cmd.rotate(axis, angle, "all")
 
             # Save the newly oriented structure
             cmd.save(self.pdb_oriented)
@@ -428,6 +448,7 @@ class Martini:
         replicas: int = 4,
         trajectory_checkpoints: int = 10,
         simulation_time: int = 10000,
+        pymol_visualization: bool = True,
         verbose: bool = True,
     ) -> None:
         """
@@ -870,6 +891,36 @@ class Martini:
             # Dedent the file to remove all initial indentation
             self._deindent_file("slurm_array.sh", "slurm_array.sh")
 
+        def _generatePymolVisualization() -> None:
+            """
+            Generates a PyMOL visualization script and saves it to a file.
+            The script loads a molecular system, hides all objects, shows spheres,
+            and selects specific non-protein residues with transparency settings.
+            """
+
+            # Define the path where the file will be saved
+            path_pymol_visualization = os.path.join(
+                self.path_input_models, "cg_viz.pml"
+            )
+
+            # PyMOL commands to write to the file
+            pymol_commands = [
+                "load system.gro",
+                "hide all",
+                "show spheres",
+                r"select non_protein, resn NA\++CL-+POPC+W",  # Escape '+' for proper PyMOL selection
+                "set sphere_transparency, 0.8, non_protein",
+            ]
+
+            # Open the file in write mode and write the PyMOL commands
+            with open(path_pymol_visualization, "w") as file:
+                for command in pymol_commands:
+                    file.write(f"{command}\n")
+
+            print(
+                f"PyMOL visualization script saved to {path_pymol_visualization}.\nIt is recommended to look at the system before launching simulations.\n\t$> pymol cg_viz.pml"
+            )
+
         _modifyTopologyFiles()  # Modify the topology file
         _generateGmxFiles()  # Generate Gmx files
         _modifyGmxScripts(
@@ -879,3 +930,6 @@ class Martini:
         _generateRunFile(
             queue, ntasks, gpus, cpus, replicas, trajectory_checkpoints
         )  # Generate the run file
+
+        if pymol_visualization:
+            _generatePymolVisualization()  # Generate the PyMOL visualization script
