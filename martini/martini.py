@@ -136,16 +136,37 @@ class Martini:
         self,
         residue_orientation: list[tuple[str, int]] | None = None,
         strength_conf: float = 700,
+        strength_el: float = 0.5,
         overwrite: bool = False,
         maxwarn: int = 20,
         verbose: bool = True,
     ) -> None:
         """
-        Sets the coarse-grained (CG) model for the protein.
+        This method prepares and sets up a coarse-grained model for a protein using the MARTINI force field.
+        It optionally orients the protein structure based on specified residues and generates the CG model file.
 
-        Parameters:
-            strength_conf (float, optional): The strength of the elastic network used for the CG model. Defaults to 700.
-            overwrite (bool, optional): Whether to overwrite the existing CG model file if it already exists. Defaults to False.
+            residue_orientation (list[tuple[str, int]] | None, optional):
+                A list of tuples specifying the chain and residue numbers to orient the structure.
+                If None, the first and last residues of the first chain are used. Defaults to None.
+            strength_conf (float, optional):
+                The strength of the elastic network used for the CG model. Defaults to 700.
+            strength_el (float, optional):
+                Elastic bond lower cutoff: F = Fc if rij < lo (default: 0.5)
+            overwrite (bool, optional):
+                Whether to overwrite the existing CG model file if it already exists. Defaults to False.
+            maxwarn (int, optional):
+                The maximum number of warnings allowed during the martinize2 process. Defaults to 20.
+            verbose (bool, optional):
+                Whether to print detailed information during the process. Defaults to True.
+
+        Raises:
+            Exception: If the residues selected for orientation are not exactly two.
+            Exception: If the distance between the selected residues is too small.
+
+        Notes:
+            - This method uses Biopython to parse PDB files and PyMOL for molecular visualization and manipulation.
+            - The martinize2 tool is used to generate the CG model.
+            - Ensure that the required dependencies (Biopython, PyMOL, martinize2) are installed and properly configured.
         """
 
         def _find_first_and_last_residue() -> list[tuple[str, int]]:
@@ -314,7 +335,7 @@ class Martini:
                 "-ef",
                 str(strength_conf),
                 "-el",
-                "0.5",
+                f"{str(strength_el)}",
                 "-eu",
                 "0.9",
                 "-maxwarn",
