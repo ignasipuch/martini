@@ -4,9 +4,9 @@ nsteps                   = 100000000       ; 500ns
 dt                       = 0.02          ; Martini simulations often use 20 fs timestep with virtual sites
 
 ; Output control
-nstxout                  = 0             ; Don�~@~Yt write coordinates to .trr file
-nstvout                  = 0             ; Don�~@~Yt write velocities
-nstfout                  = 0             ; Don�~@~Yt write forces
+nstxout                  = 0             ; Dont write coordinates to .trr file
+nstvout                  = 0             ; Dont write velocities
+nstfout                  = 0             ; Dont write forces
 nstenergy                = 25000          ; Save energies every 20 ps (closer to reference .mdp)
 nstlog                   = 25000          ; Update log file every 20 ps
 compressed-x-grps        = System        ; Write .xtc for the whole system
