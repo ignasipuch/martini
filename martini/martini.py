@@ -469,6 +469,7 @@ class Martini:
         replicas: int = 4,
         trajectory_checkpoints: int = 10,
         simulation_time: int = 10000,
+        time_step: float = 0.02,
         pymol_visualization: bool = True,
         verbose: bool = True,
     ) -> None:
@@ -605,7 +606,10 @@ class Martini:
             os.chdir(original_dir)
 
         def _modifyGmxScripts(
-            temperature: float, trajectory_checkpoints: int, simulation_time: int
+            temperature: float,
+            trajectory_checkpoints: int,
+            simulation_time: int,
+            time_step: float,
         ) -> None:
             """
             Modifies the Gromacs (Gmx) script files in the specified directory based on the given simulation parameters.
@@ -615,7 +619,9 @@ class Martini:
             2. Modifies the simulation temperature in the .mdp files found in the specified directory.
             """
 
-            def _modify_simulation_time(simulation_time, trajectory_checkpoints):
+            def _modify_simulation_time(
+                simulation_time, time_step, trajectory_checkpoints
+            ):
                 """
                 Modifies the simulation time in the 'md' script file based on the given simulation parameters.
                 The function performs the following steps:
@@ -625,8 +631,6 @@ class Martini:
                 4. Modify the 'nsteps' line.
                 5. Write the modified content back to the file.
                 """
-
-                time_step = 0.01
 
                 # Calculate number_of_steps based on the given logic
                 simulation_time_in_pico = simulation_time * 1000
@@ -660,7 +664,10 @@ class Martini:
                         lines[i] = (
                             f"nsteps                  = {number_of_steps}     ; {simulation_time}ns\n"
                         )
-                        break  # Exit the loop once we've made the modification
+                    elif line.startswith("dt"):
+                        lines[i] = (
+                            f"dt                      = {time_step}          ; {time_step*1000} fs\n"
+                        )
 
                 # Write the modified content back to the file
                 with open(path_to_md, "w") as file:
@@ -710,7 +717,7 @@ class Martini:
                     os.rename(new_file_path, file)
 
             # Modify the simulation time
-            _modify_simulation_time(simulation_time, trajectory_checkpoints)
+            _modify_simulation_time(simulation_time, time_step, trajectory_checkpoints)
             # Modify the simulation temperature
             _modify_simulation_temperature(temperature)
             if verbose:
@@ -945,7 +952,7 @@ class Martini:
         _modifyTopologyFiles()  # Modify the topology file
         _generateGmxFiles()  # Generate Gmx files
         _modifyGmxScripts(
-            temperature, trajectory_checkpoints, simulation_time
+            temperature, trajectory_checkpoints, simulation_time, time_step
         )  # Modify the Gmx scripts
         _generateOuptutDirectoryTree(replicas)  # Generate the output directory tree
         _generateRunFile(
