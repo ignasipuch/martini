@@ -454,6 +454,9 @@ class Martini:
             print(
                 "Insane might not capture correctly the charge of the system.\nIf the GROMACS simulation fails because of this, rerun this\nmethod with the parameter charge adjusted to the .err file\nfrom GROMACS."
             )
+            print(
+                "Make sure to make the simulation box suffienlty large. Otherwise you might encounter that the largest distance between excluded atoms is larger than 1.4."
+            )
 
         # Set the name of the coarse-grained system file
         self.cg_system_name = "system.gro"
