@@ -45,8 +45,10 @@ Clone and install in editable mode:
 git clone https://github.com/ignasipuch/martini.git
 cd martini
 pip install -e .
+```
 
----
+This is an example of its functions. Specific examples with pdbs can be found in martini/examples.
+```
 import martini
 model = martini.Martini(pdb_file='model.pdb', project_name='model')
 
@@ -77,3 +79,4 @@ model.setUpMartiniSimulation(
     replicas=4,
     simulation_time=8000
 )
+```
