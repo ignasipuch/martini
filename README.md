@@ -47,7 +47,7 @@ cd martini
 pip install -e .
 ```
 
-This is an example of its functions. Specific examples with pdbs can be found in martini/examples.
+This is an example of its functions. Specific examples with pdbs can be found in docs/examples.
 ```
 import martini
 model = martini.Martini(pdb_file='model.pdb', project_name='model')
